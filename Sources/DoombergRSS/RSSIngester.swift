@@ -135,6 +135,7 @@ public actor RSSIngester {
 
         while !Task.isCancelled {
             do {
+                logger.info("Polling feed \(feed.id)")
                 let data = try await httpClient.fetch(url: feed.url)
                 let entries = try parser.parse(data: data)
                 let ingestedAt = Date()
@@ -157,6 +158,8 @@ public actor RSSIngester {
                             ingestedAt: ingestedAt
                         )
                         items.append(item)
+                    } else {
+                        logger.info("Duplicate item ignored for \(feed.id): \(entry.title)")
                     }
                 }
 
