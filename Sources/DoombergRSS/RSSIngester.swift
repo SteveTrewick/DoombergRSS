@@ -133,9 +133,12 @@ public actor RSSIngester {
         var dedupe = DedupeTracker()
         let parser = RSSParser()
 
+        var pollCount = 0
         while !Task.isCancelled {
             do {
-                logger.info("Polling feed \(feed.id)")
+                pollCount += 1
+                let timestamp = ISO8601DateFormatter().string(from: Date())
+                logger.info("Polling feed \(feed.id) [\(pollCount)] at \(timestamp)")
                 let data = try await httpClient.fetch(url: feed.url)
                 let entries = try parser.parse(data: data)
                 let ingestedAt = Date()
@@ -159,7 +162,7 @@ public actor RSSIngester {
                         )
                         items.append(item)
                     } else {
-                        logger.info("Duplicate item ignored for \(feed.id): \(entry.title)")
+                        logger.info("Duplicate item ignored for \(feed.id) [\(pollCount)]: \(entry.title)")
                     }
                 }
 
