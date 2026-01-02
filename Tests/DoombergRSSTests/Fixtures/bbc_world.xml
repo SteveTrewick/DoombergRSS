@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>BBC News - World</title>
+    <link>https://www.bbc.co.uk/news/world</link>
+    <description>BBC News - World</description>
+    <item>
+      <title>Sample World Story</title>
+      <link>https://www.bbc.co.uk/news/world-europe-67812345</link>
+      <description>Sample description for the story.</description>
+      <pubDate>Mon, 01 Jan 2024 12:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>
