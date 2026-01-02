@@ -12,9 +12,15 @@ let package = Package(
             targets: ["DoombergRSS"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/SteveTrewick/DoomLogs.git", from: "0.0.1")
+    ],
     targets: [
         .target(
-            name: "DoombergRSS"
+            name: "DoombergRSS",
+            dependencies: [
+                .product(name: "DoomLogs", package: "DoomLogs")
+            ]
         ),
         .testTarget(
             name: "DoombergRSSTests",

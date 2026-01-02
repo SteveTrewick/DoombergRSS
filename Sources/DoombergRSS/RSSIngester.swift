@@ -2,6 +2,7 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+import DoomLogs
 
 protocol HTTPClient: Sendable {
     func fetch(url: URL) async throws -> Data
@@ -38,20 +39,27 @@ public actor RSSIngester {
     private var streamContinuation: AsyncStream<NewsItem>.Continuation?
     private let pollIntervalPolicy: PollIntervalPolicy
     private let httpClient: HTTPClient
+    private let logger: DoomLogger
 
     public init(pollIntervalPolicy: PollIntervalPolicy = DefaultPollIntervalPolicy()) {
         self.pollIntervalPolicy = pollIntervalPolicy
         self.httpClient = URLSessionHTTPClient()
+        self.logger = DoomLogger(subsystem: "DoombergRSS", category: "RSSIngester")
     }
 
-    init(pollIntervalPolicy: PollIntervalPolicy, httpClient: HTTPClient) {
+    init(
+        pollIntervalPolicy: PollIntervalPolicy,
+        httpClient: HTTPClient,
+        logger: DoomLogger = DoomLogger(subsystem: "DoombergRSS", category: "RSSIngester")
+    ) {
         self.pollIntervalPolicy = pollIntervalPolicy
         self.httpClient = httpClient
+        self.logger = logger
     }
 
     public func register(source: FeedDefinition) {
         if feeds[source.id] != nil {
-            Logger.info("Duplicate feed registration ignored: \(source.id)")
+            logger.info("Duplicate feed registration ignored: \(source.id)")
             return
         }
 
@@ -64,7 +72,7 @@ public actor RSSIngester {
 
     public func start() -> AsyncStream<NewsItem> {
         if state == .running, let stream {
-            Logger.info("RSSIngester already running.")
+            logger.info("RSSIngester already running.")
             return stream
         }
 
@@ -99,11 +107,12 @@ public actor RSSIngester {
 
     private func startFeedTask(feed: FeedDefinition) {
         guard let continuation = streamContinuation else { return }
-        let task = Task.detached { [feed, httpClient, pollIntervalPolicy, continuation] in
+        let task = Task.detached { [feed, httpClient, pollIntervalPolicy, logger, continuation] in
             await Self.runFeedLoop(
                 feed: feed,
                 httpClient: httpClient,
                 pollIntervalPolicy: pollIntervalPolicy,
+                logger: logger,
                 emit: { items in
                     for item in items {
                         continuation.yield(item)
@@ -118,6 +127,7 @@ public actor RSSIngester {
         feed: FeedDefinition,
         httpClient: HTTPClient,
         pollIntervalPolicy: PollIntervalPolicy,
+        logger: DoomLogger,
         emit: @Sendable ([NewsItem]) async -> Void
     ) async {
         var dedupe = DedupeTracker()
@@ -154,7 +164,7 @@ public actor RSSIngester {
                     await emit(items)
                 }
             } catch {
-                Logger.error("Feed \(feed.id) failed: \(error)")
+                logger.error("Feed \(feed.id) failed: \(error)")
             }
 
             let interval = pollIntervalPolicy.pollIntervalSeconds(for: feed)
