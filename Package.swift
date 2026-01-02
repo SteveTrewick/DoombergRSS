@@ -13,7 +13,7 @@ let package = Package(
         )
     ],
     dependencies: [
-        .package(path: "../DoomLogs")
+        .package(url: "https://github.com/SteveTrewick/DoomLogs.git", from: "0.1.1")
     ],
     targets: [
         .target(

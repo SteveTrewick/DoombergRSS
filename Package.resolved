@@ -1,0 +1,15 @@
+{
+  "originHash" : "958a6e03811b953a50b8bbe4861bfb0abb1b87969028c1895dc5410ccf9b82d4",
+  "pins" : [
+    {
+      "identity" : "doomlogs",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SteveTrewick/DoomLogs.git",
+      "state" : {
+        "revision" : "a20521bf5dfa4a9a1a16286b3071daa5dabeee6a",
+        "version" : "0.1.1"
+      }
+    }
+  ],
+  "version" : 3
+}
