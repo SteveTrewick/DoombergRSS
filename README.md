@@ -1,0 +1,68 @@
+# DoombergRSS
+
+Runtime RSS ingester actor for the Doomberg Terminal system.
+
+This package provides a Swift concurrency-based ingester that accepts validated feed
+definitions from an orchestration layer, polls feeds concurrently, parses RSS/Atom
+responses, performs per-feed deduplication, and emits `NewsItem` values through a single
+`AsyncStream`.
+
+## Features
+
+- Runtime-only ingestion (no feed file loading or validation)
+- One task per feed with configurable polling policy
+- Per-feed deduplication with update semantics
+- Single non-throwing `AsyncStream<NewsItem>` for downstream consumers
+- Linux-compatible networking and XML parsing via conditional imports
+
+## API overview
+
+```swift
+import DoombergRSS
+
+let ingester = RSSIngester()
+let feed = FeedDefinition(
+    id: "bbc-world",
+    url: URL(string: "https://feeds.bbci.co.uk/news/world/rss.xml")!,
+    title: "BBC World",
+    enabled: true,
+    pollIntervalSeconds: nil,
+    tags: ["news"],
+    priority: 1,
+    notes: nil
+)
+
+ingester.register(source: feed)
+let stream = await ingester.start()
+
+Task {
+    for await item in stream {
+        print("\(item.title) -> \(item.url)")
+    }
+}
+
+// Later...
+await ingester.stop()
+```
+
+## Build
+
+```bash
+swift build
+```
+
+## Test
+
+```bash
+swift test
+```
+
+## Notes
+
+- The ingester is restartable after `stop()`.
+- Runtime errors are logged out of band and never terminate the stream.
+- URL normalization and deduplication follow the rules in `spec.md`.
+
+## License
+
+MIT
