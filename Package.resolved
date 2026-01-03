@@ -1,5 +1,5 @@
 {
-  "originHash" : "958a6e03811b953a50b8bbe4861bfb0abb1b87969028c1895dc5410ccf9b82d4",
+  "originHash" : "bda69cfd6b0224f26603ac0fa49c9ee741496641ba47ea06659d5bf3adc1a366",
   "pins" : [
     {
       "identity" : "doomlogs",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "a20521bf5dfa4a9a1a16286b3071daa5dabeee6a",
         "version" : "0.1.1"
+      }
+    },
+    {
+      "identity" : "doommodels",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SteveTrewick/DoomModels.git",
+      "state" : {
+        "revision" : "49fb3f76fa383ff8c453fdebf29d730c76d3ba98",
+        "version" : "0.1.0"
       }
     }
   ],

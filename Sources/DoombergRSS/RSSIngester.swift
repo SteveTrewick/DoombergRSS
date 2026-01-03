@@ -2,6 +2,7 @@ import Foundation
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+import DoomModels
 import DoomLogs
 
 protocol HTTPClient: Sendable {

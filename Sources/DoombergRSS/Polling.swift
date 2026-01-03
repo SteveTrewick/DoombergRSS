@@ -1,4 +1,5 @@
 import Foundation
+import DoomModels
 
 public protocol PollIntervalPolicy: Sendable {
     func pollIntervalSeconds(for feed: FeedDefinition) -> Int
