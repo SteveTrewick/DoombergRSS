@@ -3,14 +3,15 @@
 Runtime RSS ingester actor for the Doomberg Terminal system.
 
 This package provides a Swift concurrency-based ingester that accepts validated feed
-definitions from an orchestration layer, polls feeds concurrently, parses RSS/Atom
-responses, performs per-feed deduplication, and emits `NewsItem` values through a single
-`AsyncStream`.
+definitions from an orchestration layer, schedules polls with a central scheduler,
+parses RSS/Atom responses, performs per-feed deduplication, and emits `NewsItem` values
+through a single `AsyncStream`.
 
 ## Features
 
 - Runtime-only ingestion (no feed file loading or validation)
-- One task per feed with configurable polling policy
+- Central scheduler with configurable polling policy and backoff
+- Concurrency cap for in-flight polls
 - Per-feed deduplication with update semantics
 - Single non-throwing `AsyncStream<NewsItem>` for downstream consumers
 - Linux-compatible networking and XML parsing via conditional imports
@@ -33,6 +34,8 @@ let feed = FeedDefinition(
 )
 
 ingester.register(source: feed)
+// Or batch:
+// ingester.register(sources: [feed])
 let stream = await ingester.start()
 
 Task {
