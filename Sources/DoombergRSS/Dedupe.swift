@@ -1,6 +1,6 @@
 import Foundation
 
-struct DedupeTracker {
+struct DedupeTracker: Sendable {
     private var latestByKey: [String: Date] = [:]
 
     mutating func shouldEmit(url: URL?, title: String, publishedAt: Date) -> Bool {
