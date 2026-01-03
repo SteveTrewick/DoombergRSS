@@ -26,6 +26,11 @@ final class URLSessionHTTPClient: HTTPClient, @unchecked Sendable {
 }
 
 public actor RSSIngester {
+    public enum SchedulingMode: Sendable {
+        case bursty
+        case smooth
+    }
+
     private struct PerFeedState: Sendable {
         var dedupe = DedupeTracker()
         var pollCount: Int = 0
@@ -50,6 +55,7 @@ public actor RSSIngester {
     private var schedulerTask: Task<Void, Never>?
     private var inFlight: Set<String> = []
     private var nextDue: [String: Date] = [:]
+    private var lastDue: [String: Date] = [:]
     private var failureCount: [String: Int] = [:]
     private var perFeedState: [String: PerFeedState] = [:]
     private let maxConcurrentPolls: Int = 4
@@ -58,21 +64,39 @@ public actor RSSIngester {
     private let pollIntervalPolicy: PollIntervalPolicy
     private let httpClient: HTTPClient
     private let logger: DoomLogger
+    private let schedulingMode: SchedulingMode
+    private let minLaunchSpacing: TimeInterval
+    private let smoothMaxInitialSpreadSeconds: Int
+    private var lastLaunchAt: Date?
 
-    public init(pollIntervalPolicy: PollIntervalPolicy = DefaultPollIntervalPolicy()) {
+    public init(
+        pollIntervalPolicy: PollIntervalPolicy = DefaultPollIntervalPolicy(),
+        schedulingMode: SchedulingMode = .bursty,
+        smoothMinLaunchSpacingSeconds: TimeInterval = 1.0,
+        smoothMaxInitialSpreadSeconds: Int = 300
+    ) {
         self.pollIntervalPolicy = pollIntervalPolicy
         self.httpClient = URLSessionHTTPClient()
         self.logger = DoomLogger(subsystem: "DoombergRSS", category: "RSSIngester")
+        self.schedulingMode = schedulingMode
+        self.minLaunchSpacing = schedulingMode == .smooth ? smoothMinLaunchSpacingSeconds : 0
+        self.smoothMaxInitialSpreadSeconds = smoothMaxInitialSpreadSeconds
     }
 
     init(
         pollIntervalPolicy: PollIntervalPolicy,
         httpClient: HTTPClient,
+        schedulingMode: SchedulingMode = .bursty,
+        smoothMinLaunchSpacingSeconds: TimeInterval = 1.0,
+        smoothMaxInitialSpreadSeconds: Int = 300,
         logger: DoomLogger = DoomLogger(subsystem: "DoombergRSS", category: "RSSIngester")
     ) {
         self.pollIntervalPolicy = pollIntervalPolicy
         self.httpClient = httpClient
         self.logger = logger
+        self.schedulingMode = schedulingMode
+        self.minLaunchSpacing = schedulingMode == .smooth ? smoothMinLaunchSpacingSeconds : 0
+        self.smoothMaxInitialSpreadSeconds = smoothMaxInitialSpreadSeconds
     }
 
     public func register(source: FeedDefinition) {
@@ -128,8 +152,10 @@ public actor RSSIngester {
         tasks.removeAll()
         inFlight.removeAll()
         nextDue.removeAll()
+        lastDue.removeAll()
         failureCount.removeAll()
         perFeedState.removeAll()
+        lastLaunchAt = nil
         streamContinuation?.finish()
         streamContinuation = nil
         stream = nil
@@ -179,7 +205,20 @@ public actor RSSIngester {
                 continue
             }
 
-            launchWorker(for: feedID, feed: feed)
+            if minLaunchSpacing > 0, let lastLaunchAt {
+                let elapsed = now.timeIntervalSince(lastLaunchAt)
+                if elapsed < minLaunchSpacing {
+                    let remaining = minLaunchSpacing - elapsed
+                    do {
+                        try await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+                    } catch {
+                        break
+                    }
+                    continue
+                }
+            }
+
+            launchWorker(for: feedID, feed: feed, dueAt: dueAt)
         }
         logger.info("Scheduler stopped.")
     }
@@ -189,7 +228,14 @@ public actor RSSIngester {
         let enabledCount = feeds.values.filter { $0.enabled }.count
         for feed in feeds.values where feed.enabled {
             if nextDue[feed.id] == nil {
-                let offset = Self.initialOffsetSeconds(feedID: feed.id, enabledCount: enabledCount)
+                let base = pollIntervalPolicy.pollIntervalSeconds(for: feed)
+                let offset = Self.initialOffsetSeconds(
+                    feedID: feed.id,
+                    enabledCount: enabledCount,
+                    base: base,
+                    mode: schedulingMode,
+                    smoothMaxInitialSpreadSeconds: smoothMaxInitialSpreadSeconds
+                )
                 nextDue[feed.id] = now.addingTimeInterval(TimeInterval(offset))
             }
         }
@@ -218,10 +264,12 @@ public actor RSSIngester {
         return (feedID, feed, chosenDue)
     }
 
-    private func launchWorker(for feedID: String, feed: FeedDefinition) {
+    private func launchWorker(for feedID: String, feed: FeedDefinition, dueAt: Date) {
         guard tasks[feedID] == nil else { return }
         let state = perFeedState[feedID] ?? PerFeedState()
         inFlight.insert(feedID)
+        lastDue[feedID] = dueAt
+        lastLaunchAt = Date()
 
         let task = Task.detached { [feedID, feed, httpClient, logger, state] in
             let outcome = await Self.pollOnce(
@@ -261,8 +309,25 @@ public actor RSSIngester {
         let base = pollIntervalPolicy.pollIntervalSeconds(for: feed)
         let failures = failureCount[feedID] ?? 0
         let factor = Self.backoffFactor(failures: failures)
-        let nextInterval = Self.nextIntervalSeconds(base: base, failures: failures, feedID: feed.id)
-        nextDue[feedID] = Date().addingTimeInterval(TimeInterval(nextInterval))
+        let nextInterval = Self.nextIntervalSeconds(
+            base: base,
+            failures: failures,
+            feedID: feed.id
+        )
+
+        let anchor: Date
+        switch schedulingMode {
+        case .bursty:
+            anchor = Date()
+        case .smooth:
+            anchor = lastDue[feedID] ?? Date()
+        }
+
+        var nextDate = anchor.addingTimeInterval(TimeInterval(nextInterval))
+        if nextDate < Date() {
+            nextDate = Date()
+        }
+        nextDue[feedID] = nextDate
 
         if outcome.success {
             logger.info("Poll complete for \(feed.id). Next in \(nextInterval)s.")
@@ -274,14 +339,33 @@ public actor RSSIngester {
     private func scheduleInitialDueIfNeeded(for feed: FeedDefinition) {
         guard nextDue[feed.id] == nil else { return }
         let enabledCount = feeds.values.filter { $0.enabled }.count
-        let offset = Self.initialOffsetSeconds(feedID: feed.id, enabledCount: enabledCount)
+        let base = pollIntervalPolicy.pollIntervalSeconds(for: feed)
+        let offset = Self.initialOffsetSeconds(
+            feedID: feed.id,
+            enabledCount: enabledCount,
+            base: base,
+            mode: schedulingMode,
+            smoothMaxInitialSpreadSeconds: smoothMaxInitialSpreadSeconds
+        )
         nextDue[feed.id] = Date().addingTimeInterval(TimeInterval(offset))
     }
 
-    static func initialOffsetSeconds(feedID: String, enabledCount: Int) -> Int {
+    static func initialOffsetSeconds(
+        feedID: String,
+        enabledCount: Int,
+        base: Int,
+        mode: SchedulingMode,
+        smoothMaxInitialSpreadSeconds: Int = 300
+    ) -> Int {
         guard enabledCount > 1 else { return 0 }
         let hash = stableHash(feedID)
-        return Int(hash % 31)
+        switch mode {
+        case .bursty:
+            return Int(hash % 31)
+        case .smooth:
+            let spread = max(1, min(base, smoothMaxInitialSpreadSeconds))
+            return Int(hash % UInt64(spread))
+        }
     }
 
     static func jitterSeconds(feedID: String, base: Int) -> Int {

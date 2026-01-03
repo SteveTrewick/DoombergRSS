@@ -12,6 +12,7 @@ through a single `AsyncStream`.
 - Runtime-only ingestion (no feed file loading or validation)
 - Central scheduler with configurable polling policy and backoff
 - Concurrency cap for in-flight polls
+- Optional smooth scheduling mode with spread and launch spacing controls
 - Per-feed deduplication with update semantics
 - Single non-throwing `AsyncStream<NewsItem>` for downstream consumers
 - Linux-compatible networking and XML parsing via conditional imports
@@ -36,6 +37,13 @@ let feed = FeedDefinition(
 ingester.register(source: feed)
 // Or batch:
 // ingester.register(sources: [feed])
+
+// Smooth scheduling (optional):
+// let ingester = RSSIngester(
+//     schedulingMode: .smooth,
+//     smoothMinLaunchSpacingSeconds: 2.0,
+//     smoothMaxInitialSpreadSeconds: 180
+// )
 let stream = await ingester.start()
 
 Task {

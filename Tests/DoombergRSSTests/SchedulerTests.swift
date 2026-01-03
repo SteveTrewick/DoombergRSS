@@ -6,9 +6,29 @@ import DoomModels
 final class SchedulerTests: XCTestCase {
     func testInitialOffsetsSpreadAcrossFeeds() {
         let feedIDs = ["alpha", "beta", "gamma", "delta", "epsilon"]
-        let offsets = feedIDs.map { RSSIngester.initialOffsetSeconds(feedID: $0, enabledCount: feedIDs.count) }
+        let offsets = feedIDs.map {
+            RSSIngester.initialOffsetSeconds(
+                feedID: $0,
+                enabledCount: feedIDs.count,
+                base: 300,
+                mode: .bursty
+            )
+        }
         let uniqueOffsets = Set(offsets)
         XCTAssertGreaterThan(uniqueOffsets.count, 1)
+    }
+
+    func testSmoothOffsetsStayWithinBaseWindow() {
+        let base = 120
+        let offset = RSSIngester.initialOffsetSeconds(
+            feedID: "smooth-feed",
+            enabledCount: 3,
+            base: base,
+            mode: .smooth,
+            smoothMaxInitialSpreadSeconds: 90
+        )
+        XCTAssertGreaterThanOrEqual(offset, 0)
+        XCTAssertLessThan(offset, min(base, 90))
     }
 
     func testJitterIsDeterministicAndBounded() {
